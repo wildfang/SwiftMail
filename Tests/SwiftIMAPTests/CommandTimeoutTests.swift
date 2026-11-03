@@ -158,6 +158,24 @@ struct CommandTimeoutTimerTests {
             }
         }
 
+        @Test("a server's minimum deadline lengthens a command's shorter one")
+        func minimumCommandTimeoutLengthensShorterDeadline() async throws {
+            try await withLoggedInServer(withholdsLiteral: true, minimumCommandTimeoutSeconds: 2) { server, _ in
+                // The probe's own deadline is 1 s; the server waits at least 2 s.
+                let start = Date()
+                do {
+                    try await server.executeCommand(
+                        ProbeCommand(prepareSeconds: 0, closesChannelFirst: false, silent: true))
+                    Issue.record("a silent server should time out")
+                } catch IMAPError.timeout {
+                    // expected
+                }
+                let elapsed = Date().timeIntervalSince(start)
+                #expect(elapsed >= 1.9)
+                #expect(elapsed < 3.5)
+            }
+        }
+
         @Test("a command that fails with its literal still pending does not stall the next one")
         func failedCommandWithPendingWriteRecyclesConnection() async throws {
             let reply = "* NO search rejected\r\n"
@@ -213,6 +231,7 @@ struct CommandTimeoutTimerTests {
         private func withLoggedInServer(
             withholdsLiteral: Bool = false,
             withheldReply: String? = nil,
+            minimumCommandTimeoutSeconds: Int = 0,
             _ body: (SwiftMail.IMAPServer, IMAPTestServer) async throws -> Void
         ) async throws {
             let tempRoot = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
@@ -234,7 +253,9 @@ struct CommandTimeoutTimerTests {
                 : try IMAPTestServer(maildirURL: maildir)
             try testServer.start()
             try await testServer.run {
-                let server = SwiftMail.IMAPServer(host: "127.0.0.1", port: testServer.port, useTLS: false)
+                let server = SwiftMail.IMAPServer(
+                    host: "127.0.0.1", port: testServer.port, transportSecurity: .plainText,
+                    minimumCommandTimeoutSeconds: minimumCommandTimeoutSeconds)
                 try await server.connect()
                 try await server.login(username: "testuser", password: "testpass")
                 try await body(server, testServer)
@@ -302,6 +323,46 @@ private final class WriteCounter: ChannelOutboundHandler, @unchecked Sendable {
     func write(context: ChannelHandlerContext, data: NIOAny, promise: EventLoopPromise<Void>?) {
         count += 1
         context.write(data, promise: promise)
+    }
+}
+
+@Suite("Authentication deadline")
+struct AuthenticationDeadlineTests {
+    @Test(
+        "AUTHENTICATE waits 10 s, or the server's minimum command deadline when that is longer",
+        arguments: zip([0, 5, 30], [10, 10, 30])
+    )
+    func authenticationDeadline(minimumCommandTimeoutSeconds: Int, expectedSeconds: Int) throws {
+        let channel = EmbeddedChannel()
+        let connection = IMAPConnection(
+            host: "127.0.0.1",
+            port: 143,
+            transportSecurity: .plainText,
+            minimumTLSVersion: .tlsv12,
+            group: channel.embeddedEventLoop,
+            loggerLabel: "test.imap",
+            outboundLabel: "test.imap.out",
+            inboundLabel: "test.imap.in",
+            connectionID: "test-auth-deadline",
+            connectionRole: "test",
+            parserLimits: .default,
+            minimumCommandTimeoutSeconds: minimumCommandTimeoutSeconds
+        )
+        let schedulers: [(Channel, EventLoopPromise<[NIOIMAPCore.Capability]>) -> Scheduled<Void>] = [
+            connection.schedulePlainAuthTimeout(channel:promise:),
+            connection.scheduleXOAUTH2Timeout(channel:promise:)
+        ]
+        for schedule in schedulers {
+            let promise = channel.eventLoop.makePromise(of: [NIOIMAPCore.Capability].self)
+            let failed = CountBox()
+            promise.futureResult.whenFailure { _ in failed.value = 1 }
+            _ = schedule(channel, promise)
+
+            channel.embeddedEventLoop.advanceTime(by: .seconds(Int64(expectedSeconds) - 1))
+            #expect(failed.value == nil)
+            channel.embeddedEventLoop.advanceTime(by: .seconds(1))
+            #expect(failed.value == 1)
+        }
     }
 }
 

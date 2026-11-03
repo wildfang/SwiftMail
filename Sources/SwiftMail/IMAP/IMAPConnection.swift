@@ -21,6 +21,9 @@ final class IMAPConnection {
     let minimumTLSVersion: MailTLSMinimumVersion
     let responseBufferLimit: Int
     let parserLimits: IMAPParserLimits
+    /// The floor `IMAPServer` was created with: no command or authentication deadline on this
+    /// connection is shorter.
+    let minimumCommandTimeoutSeconds: Int
     let group: EventLoopGroup
     let connectionID: String
     let connectionRole: String
@@ -61,6 +64,8 @@ final class IMAPConnection {
     ///   documentation claimed the policy governed every transport. A default turns "forgot to
     ///   pass the security policy" into "chose the lax one", and neither the compiler nor a
     ///   reviewer can see the difference. Without defaults, omitting one is a build error.
+    ///   `minimumCommandTimeoutSeconds` is no security policy and defaults to 0 (each command's
+    ///   own deadline); `IMAPSecurityPolicyPropagationTests` checks the factories pass it on.
     init(
         host: String,
         port: Int,
@@ -74,7 +79,8 @@ final class IMAPConnection {
         connectionID: String,
         connectionRole: String,
         responseBufferLimit: Int = IMAPServer.defaultResponseBufferLimit,
-        parserLimits: IMAPParserLimits
+        parserLimits: IMAPParserLimits,
+        minimumCommandTimeoutSeconds: Int = 0
     ) {
         self.host = host
         self.port = port
@@ -83,6 +89,7 @@ final class IMAPConnection {
         self.minimumTLSVersion = minimumTLSVersion
         self.responseBufferLimit = responseBufferLimit
         self.parserLimits = parserLimits
+        self.minimumCommandTimeoutSeconds = minimumCommandTimeoutSeconds
         self.group = group
         self.connectionID = connectionID
         self.connectionRole = connectionRole

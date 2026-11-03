@@ -147,7 +147,7 @@ extension IMAPConnection {
         do {
             try await channel.pipeline.addHandler(handler, position: .before(responseBuffer)).get()
             responseBuffer.hasActiveHandler = true
-            let timeoutSeconds = command.timeoutSeconds
+            let timeoutSeconds = max(command.timeoutSeconds, minimumCommandTimeoutSeconds)
             let logger = self.logger
             try await command.send(on: channel, tag: tag) { lastWrite in
                 Self.armCommandTimeout(

@@ -98,11 +98,12 @@ extension IMAPConnection {
         }
     }
 
-    private func schedulePlainAuthTimeout(
+    /// 10 seconds, or the server's minimum command deadline when that is longer.
+    func schedulePlainAuthTimeout(
         channel: Channel,
         promise: EventLoopPromise<[Capability]>
     ) -> Scheduled<Void> {
-        let authenticationTimeoutSeconds = 10
+        let authenticationTimeoutSeconds = max(10, minimumCommandTimeoutSeconds)
         let logger = self.logger
         return channel.eventLoop.scheduleTask(in: .seconds(Int64(authenticationTimeoutSeconds))) {
             logger.warning("PLAIN authentication timed out after \(authenticationTimeoutSeconds) seconds")
@@ -305,11 +306,12 @@ extension IMAPConnection {
         }
     }
 
-    private func scheduleXOAUTH2Timeout(
+    /// 10 seconds, or the server's minimum command deadline when that is longer.
+    func scheduleXOAUTH2Timeout(
         channel: Channel,
         promise: EventLoopPromise<[Capability]>
     ) -> Scheduled<Void> {
-        let authenticationTimeoutSeconds = 10
+        let authenticationTimeoutSeconds = max(10, minimumCommandTimeoutSeconds)
         let logger = self.logger
         // Schedule on the channel event loop to avoid cross-loop promise completion.
         return channel.eventLoop.scheduleTask(in: .seconds(Int64(authenticationTimeoutSeconds))) {

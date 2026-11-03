@@ -51,8 +51,9 @@ extension IMAPConnection {
         timeoutSeconds: Int? = nil
     ) async throws -> [PipelinedFetchResult] {
         guard !requests.isEmpty else { return [] }
-        let timeout = timeoutSeconds
-            ?? Self.defaultPipelinedFetchTimeout(partCount: requests.count)
+        let timeout = max(
+            timeoutSeconds ?? Self.defaultPipelinedFetchTimeout(partCount: requests.count),
+            minimumCommandTimeoutSeconds)
 
         return try await commandQueue.run { [self] in
             try await self.pipelinedFetchPartsBody(requests: requests, timeoutSeconds: timeout)

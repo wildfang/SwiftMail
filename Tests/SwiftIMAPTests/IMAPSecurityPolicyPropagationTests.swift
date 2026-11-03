@@ -25,19 +25,21 @@ struct IMAPSecurityPolicyPropagationTests {
             parserLimits: IMAPParserLimits(
                 bodySizeLimit: 64 * 1024 * 1024,
                 messageAttributeLimit: 1024
-            )
+            ),
+            minimumCommandTimeoutSeconds: 30
         )
     }
 
-    @Test("Named connections inherit the TLS floor and the parser limits")
+    @Test("Named connections inherit the TLS floor, the parser limits and the minimum command deadline")
     func namedConnectionInheritsPolicy() async {
         let connection = await makeServer().makeNamedConnection(name: "sync")
         #expect(connection.minimumTLSVersion == MailTLSMinimumVersion.tlsv13)
         #expect(connection.parserLimits.bodySizeLimit == 64 * 1024 * 1024)
         #expect(connection.parserLimits.messageAttributeLimit == 1024)
+        #expect(connection.minimumCommandTimeoutSeconds == 30)
     }
 
-    @Test("IDLE connections inherit the TLS floor and the parser limits")
+    @Test("IDLE connections inherit the TLS floor, the parser limits and the minimum command deadline")
     func idleConnectionInheritsPolicy() async {
         let group = MultiThreadedEventLoopGroup(numberOfThreads: 1)
         let connection = await makeServer().makeIdleConnection(
@@ -46,6 +48,7 @@ struct IMAPSecurityPolicyPropagationTests {
         #expect(connection.minimumTLSVersion == MailTLSMinimumVersion.tlsv13)
         #expect(connection.parserLimits.bodySizeLimit == 64 * 1024 * 1024)
         #expect(connection.parserLimits.messageAttributeLimit == 1024)
+        #expect(connection.minimumCommandTimeoutSeconds == 30)
         // Not in a `defer` with a detached `Task`: that would let the shutdown outlive the test.
         // This function is async and cannot throw, so awaiting here is both simpler and correct.
         await shutDownGracefully(group)
